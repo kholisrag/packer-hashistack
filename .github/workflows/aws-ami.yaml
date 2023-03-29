@@ -1,0 +1,56 @@
+name: packer-aws-ami
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PACKER_VERSION: "1.8.6"
+
+jobs:
+  packer-aws-ami:
+    name: Run Packer - AWS AMI
+    runs-on: ubuntu-22.04
+    # These permissions are needed to interact with GitHub's OIDC Token endpoint.
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup `packer`
+        uses: hashicorp/setup-packer@main
+        id: setup-packer
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        id: configure-aws-credentials
+        with:
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions/${{ secrets.AWS_IAM_ROLE_TO_ASSUME }}
+          role-session-name: github-actions-packer-hashistack
+
+      - name: AWS AMI - Run `packer init`
+        id: aws-ami-packer-init
+        run: |
+          packer init ./aws/ami/hashistack.pkr.hcl
+
+      - name: AWS AMI - Run `packer validate`
+        id: aws-ami-packer-validate
+        run: |
+          packer validate \
+            -var-file="./aws/ami/variables.pkr.vars.hcl" \
+            ./aws/ami/hashistack.pkr.hcl
+
+      - name: AWS AMI - Run `packer build` testing
+        id: aws-ami-packer-build-testing
+        run: |-
+          packer build \
+            -var-file="./aws/ami/variables.pkr.vars.hcl" \
+            -var 'skip_create_ami=true' \
+            ./aws/ami/hashistack.pkr.hcl
